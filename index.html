@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StudexAI — Study smarter</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:#f6f7fb;color:#171923}main{max-width:900px;margin:0 auto;padding:48px 20px}.brand{font-weight:800;font-size:24px}.hero{text-align:center;padding:45px 0 25px}.hero h1{font-size:clamp(36px,7vw,62px);margin:10px 0 12px;letter-spacing:-2px}.hero p{color:#656b7a;font-size:18px;margin:0 auto;max-width:620px}.card{background:white;border:1px solid #e5e7ee;border-radius:24px;padding:26px;box-shadow:0 10px 35px rgba(20,25,45,.06);margin-top:28px}.drop{border:2px dashed #cfd3df;border-radius:18px;padding:38px 20px;text-align:center;cursor:pointer;transition:.2s}.drop:hover,.drop.drag{border-color:#6366f1;background:#f7f7ff}.drop strong{display:block;font-size:18px;margin-bottom:7px}.drop span{color:#737887;font-size:14px}.previews{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px}.previews img{width:100px;height:100px;object-fit:cover;border-radius:12px;border:1px solid #ddd}.options{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin-top:22px}.option{border:1px solid #dfe2ea;background:#fff;border-radius:12px;padding:12px;cursor:pointer;text-align:left}.option.active{border-color:#6366f1;background:#f4f4ff}.option b{display:block;font-size:14px}.option small{color:#747988}.button{width:100%;margin-top:20px;border:0;border-radius:13px;padding:15px;background:#111827;color:white;font-size:16px;font-weight:700;cursor:pointer}.button:disabled{opacity:.5;cursor:not-allowed}.status{margin-top:18px;text-align:center;color:#666}.result{white-space:pre-wrap;line-height:1.65;font-size:16px}.hidden{display:none}.error{color:#b42318;background:#fff1f0;padding:12px;border-radius:10px}.footer{text-align:center;color:#8a8f9d;font-size:13px;margin-top:28px}@media(max-width:600px){main{padding:25px 14px}.card{padding:18px}.hero{padding-top:25px}}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="brand">StudexAI</div>
+    <section class="hero">
+      <h1>Turn notes into study power.</h1>
+      <p>Upload photos of your notes and let AI turn them into useful study material.</p>
+    </section>
+
+    <section class="card">
+      <div id="drop" class="drop">
+        <strong>📷 Upload photos of your notes</strong>
+        <span>JPG, PNG or WEBP · You can select multiple images</span>
+        <input id="files" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
+      </div>
+      <div id="previews" class="previews"></div>
+
+      <div class="options" id="options">
+        <button class="option active" data-task="Summary"><b>Summary</b><small>Quick revision</small></button>
+        <button class="option" data-task="Flashcards"><b>Flashcards</b><small>Question + answer</small></button>
+        <button class="option" data-task="Quiz"><b>Quiz</b><small>Test yourself</small></button>
+        <button class="option" data-task="Study notes"><b>Study notes</b><small>Clean notes</small></button>
+        <button class="option" data-task="Key terms"><b>Key terms</b><small>Important words</small></button>
+        <button class="option" data-task="Explain concepts"><b>Explain concepts</b><small>Simple explanations</small></button>
+        <button class="option" data-task="Revision questions"><b>Revision questions</b><small>Practice questions</small></button>
+      </div>
+
+      <button id="generate" class="button" disabled>Generate with AI</button>
+      <div id="status" class="status"></div>
+    </section>
+
+    <section id="resultCard" class="card hidden">
+      <h2 id="resultTitle">Your study material</h2>
+      <div id="result" class="result"></div>
+    </section>
+    <div class="footer">StudexAI · AI-powered study assistant</div>
+  </main>
+
+  <script>
+    const drop=document.getElementById('drop'), input=document.getElementById('files'), previews=document.getElementById('previews');
+    const generate=document.getElementById('generate'), status=document.getElementById('status');
+    const resultCard=document.getElementById('resultCard'), result=document.getElementById('result'), resultTitle=document.getElementById('resultTitle');
+    let selectedFiles=[]; let task='Summary';
+    drop.onclick=()=>input.click();
+    input.onchange=()=>setFiles([...input.files]);
+    drop.ondragover=e=>{e.preventDefault();drop.classList.add('drag')};
+    drop.ondragleave=()=>drop.classList.remove('drag');
+    drop.ondrop=e=>{e.preventDefault();drop.classList.remove('drag');setFiles([...e.dataTransfer.files].filter(f=>f.type.startsWith('image/')))};
+    document.querySelectorAll('.option').forEach(b=>b.onclick=()=>{document.querySelectorAll('.option').forEach(x=>x.classList.remove('active'));b.classList.add('active');task=b.dataset.task});
+    function setFiles(files){selectedFiles=files.slice(0,8);previews.innerHTML='';selectedFiles.forEach(f=>{const img=document.createElement('img');img.src=URL.createObjectURL(f);previews.appendChild(img)});generate.disabled=!selectedFiles.length;status.textContent=selectedFiles.length?`${selectedFiles.length} image${selectedFiles.length>1?'s':''} ready.`:''}
+    function toDataURL(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file)})}
+    generate.onclick=async()=>{
+      generate.disabled=true; status.textContent='Reading your notes with AI…'; resultCard.classList.add('hidden');
+      try{
+        const images=await Promise.all(selectedFiles.map(toDataURL));
+        const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task,images})});
+        const data=await res.json(); if(!res.ok) throw new Error(data.error||'Something went wrong.');
+        resultTitle.textContent=task; result.textContent=data.answer; resultCard.classList.remove('hidden'); status.textContent='Done ✓'; resultCard.scrollIntoView({behavior:'smooth'});
+      }catch(e){status.innerHTML=`<div class="error">${e.message}</div>`}finally{generate.disabled=false}
+    };
+  </script>
+</body>
+</html>
