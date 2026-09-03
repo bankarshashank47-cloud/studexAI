@@ -1,0 +1,6 @@
+name = "studexai"
+compatibility_date = "2026-09-03"
+
+[pages]
+
+# Add OPENAI_API_KEY as a Cloudflare Pages secret/environment variable.
