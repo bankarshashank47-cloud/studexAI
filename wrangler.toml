@@ -3,4 +3,7 @@ compatibility_date = "2026-09-03"
 
 [pages]
 
-# Add OPENAI_API_KEY as a Cloudflare Pages secret/environment variable.
+# Configure these in Cloudflare Pages → Settings → Environment variables.
+# AI_API_KEY = your provider key
+# AI_BASE_URL = provider's OpenAI-compatible /v1 endpoint
+# AI_MODEL = provider's vision-capable model
