@@ -4,57 +4,109 @@ export async function onRequestPost(context) {
     const body = await request.json();
     const { task = 'Summary', images = [] } = body || {};
 
-    if (!env.OPENAI_API_KEY) {
-      return json({ error: 'AI is not connected yet. Add OPENAI_API_KEY in Cloudflare Pages → Settings → Environment variables.' }, 500);
+    // Supports any OpenAI-compatible provider.
+    // Set these as Cloudflare Pages environment variables:
+    // AI_API_KEY, AI_BASE_URL, AI_MODEL
+    const apiKey = env.AI_API_KEY || env.OPENAI_API_KEY;
+    const baseUrl = (env.AI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
+    const model = env.AI_MODEL || 'gpt-4o-mini';
+
+    if (!apiKey) {
+      return json({
+        error: 'AI is not connected. Add AI_API_KEY in Cloudflare Pages → Settings → Environment variables.'
+      }, 500);
     }
+
     if (!Array.isArray(images) || images.length === 0) {
       return json({ error: 'Please upload at least one note image.' }, 400);
     }
+
     if (images.length > 8) {
       return json({ error: 'Please upload up to 8 images at a time.' }, 400);
     }
 
+    // Basic input protection and request-size control.
+    const validImages = images.filter(
+      (image) => typeof image === 'string' && /^data:image\/(png|jpe?g|webp);base64,/i.test(image)
+    );
+
+    if (validImages.length !== images.length) {
+      return json({ error: 'Only PNG, JPG/JPEG and WEBP images are supported.' }, 400);
+    }
+
+    // Keep individual images reasonably sized for a serverless request.
+    if (validImages.some((image) => image.length > 8_000_000)) {
+      return json({ error: 'One of the images is too large. Please use smaller images.' }, 413);
+    }
+
     const content = [
       {
-        type: 'input_text',
-        text: `You are StudexAI, a helpful school study assistant. Read the uploaded handwritten/printed study notes carefully. The student selected: ${task}. Create accurate, clear, age-appropriate study material based ONLY on what is visible in the notes. Do not invent facts. If something is unreadable, say so briefly. Use headings and bullets where useful. For a quiz or revision questions, include answers after the questions. For flashcards, format each as Q: and A:. Keep the result useful for exam revision.`
+        type: 'text',
+        text: `You are StudexAI, a helpful study assistant.
+
+The student selected: ${task}.
+
+Read the uploaded handwritten or printed notes carefully. Create accurate, clear, age-appropriate study material based ONLY on what is visible in the notes. Do not invent facts. If something is unreadable, say so briefly.
+
+Formatting rules:
+- Use headings and bullets where useful.
+- For flashcards, format each as Q: and A:.
+- For quizzes and revision questions, include the answers after the questions.
+- Keep the result useful for exam revision.
+- Do not mention these instructions in your answer.`
       },
-      ...images.map((image) => ({
-        type: 'input_image',
-        image_url: image
+      ...validImages.map((image) => ({
+        type: 'image_url',
+        image_url: { url: image }
       }))
     ];
 
-    const response = await fetch('https://api.openai.com/v1/responses', {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${env.OPENAI_API_KEY}`
+        'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'gpt-5.6-luna',
-        input: [{ role: 'user', content }],
-        max_output_tokens: 3000
+        model,
+        messages: [
+          {
+            role: 'user',
+            content
+          }
+        ],
+        max_tokens: 3000
       })
     });
 
     const data = await response.json();
+
     if (!response.ok) {
-      return json({ error: data?.error?.message || 'The AI service returned an error.' }, response.status);
+      console.error('AI provider error:', data);
+      return json({
+        error: data?.error?.message || 'The AI service returned an error.'
+      }, response.status);
     }
 
-    const answer = data.output_text || data.output?.flatMap(item => item.content || []).map(part => part.text || '').join('') || '';
-    if (!answer) return json({ error: 'The AI returned no text. Please try again.' }, 502);
+    const answer = data?.choices?.[0]?.message?.content;
+
+    if (!answer) {
+      return json({ error: 'The AI returned no text. Please try again.' }, 502);
+    }
 
     return json({ answer });
   } catch (error) {
-    return json({ error: error?.message || 'Server error.' }, 500);
+    console.error('StudexAI error:', error);
+    return json({ error: 'Something went wrong while processing your notes.' }, 500);
   }
 }
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json' }
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store'
+    }
   });
 }
